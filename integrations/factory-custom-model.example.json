@@ -1,0 +1,13 @@
+{
+  "id": "custom:GLM-5.2-(Umans)",
+  "displayName": "GLM 5.2 (Umans)",
+  "provider": "anthropic",
+  "baseUrl": "http://127.0.0.1:8084",
+  "model": "claude-sonnet-4-5-20250929",
+  "apiKey": "sk-local-placeholder",
+  "maxOutputTokens": 64000,
+  "noImageSupport": false,
+  "extraHeaders": {
+    "x-umans-target-model": "umans-glm-5.2"
+  }
+}

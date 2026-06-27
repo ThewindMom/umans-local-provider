@@ -1,0 +1,18 @@
+{
+  "LISTEN_ADDR": "127.0.0.1:8084",
+  "UPSTREAM_BASE_URL": "http://127.0.0.1:8319/v1",
+  "API_KEY": "sk-your-umans-api-key-here",
+  "API_KEYS": [],
+  "REQUEST_TIMEOUT": "15m",
+  "CACHE_TTL": "60s",
+  "CACHE_MAX_SIZE": 100,
+  "CACHE_ENABLED": true,
+  "OVERRIDE_CONCURRENCY": 0,
+  "MAX_IMAGES": 9,
+  "VISION_HANDOFF_ENABLED": true,
+  "VISION_HANDOFF_MODEL": "umans-kimi-k2.7",
+  "VISION_HANDOFF_PROMPT": "",
+  "SLEEV_ENABLED": false,
+  "wallpaperSource": "none",
+  "DISABLED_MODELS": []
+}

@@ -1,0 +1,15 @@
+[Unit]
+Description=Local UMANS dashboard proxy in front of strict limiter
+After=network-online.target umans-limiter.service
+Wants=network-online.target umans-limiter.service
+
+[Service]
+Type=simple
+WorkingDirectory=%h/.local/share/umans-factory-provider
+ExecStart=%h/.bun/bin/bun %h/.local/share/umans-factory-provider/proxy.js
+Restart=on-failure
+RestartSec=2
+Environment=UMANS_DASH_AUTO_SETUP_OPENCODE=false
+
+[Install]
+WantedBy=default.target

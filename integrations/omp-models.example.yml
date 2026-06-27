@@ -1,0 +1,11 @@
+providers:
+  umans:
+    baseUrl: http://127.0.0.1:8084/v1
+    modelOverrides:
+      umans-glm-5.2:
+        input:
+          - text
+          - image
+
+images:
+  describeForTextModels: true

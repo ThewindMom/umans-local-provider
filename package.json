@@ -1,0 +1,26 @@
+{
+  "name": "umans-factory-provider",
+  "version": "0.1.0",
+  "description": "Local UMANS provider for Factory Droid and Oh My Pi with strict rate limiting and GLM vision handoff.",
+  "main": "proxy.js",
+  "scripts": {
+    "start": "bun run proxy.js",
+    "start:proxy": "bun run proxy.js",
+    "start:limiter": "bun run src/umans-limiter.ts",
+    "test": "bun test",
+    "validate": "node --check proxy.js && bun test && bun run scripts/secret-scan.ts",
+    "smoke:live": "bun run scripts/smoke-live.ts"
+  },
+  "keywords": [
+    "umans",
+    "factory-droid",
+    "oh-my-pi",
+    "llm-proxy",
+    "vision-handoff",
+    "rate-limit"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {},
+  "devDependencies": {}
+}

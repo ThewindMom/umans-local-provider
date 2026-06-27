@@ -1,0 +1,18 @@
+[Unit]
+Description=Local UMANS API concurrency limiter
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/.local/share/umans-factory-provider
+ExecStart=%h/.bun/bin/bun %h/.local/share/umans-factory-provider/src/umans-limiter.ts
+Restart=on-failure
+RestartSec=2
+Environment=UMANS_LIMITER_HOST=127.0.0.1
+Environment=UMANS_LIMITER_PORT=8319
+Environment=UMANS_LIMITER_MAX_CONCURRENCY=4
+Environment=UMANS_LIMITER_UPSTREAM=https://api.code.umans.ai
+
+[Install]
+WantedBy=default.target
