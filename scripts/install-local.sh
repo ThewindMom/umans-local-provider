@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-APP_DIR="$HOME/.local/share/umans-factory-provider"
+APP_DIR="$HOME/.local/share/umans-local-provider"
+OLD_APP_DIR="$HOME/.local/share/umans-factory-provider"
 SYSTEMD_DIR="$HOME/.config/systemd/user"
 
 if ! BUN_BIN="$(command -v bun)"; then
@@ -16,6 +17,11 @@ for path in proxy.js dashboard.html package.json src scripts config integrations
     cp -R "$path" "$APP_DIR/"
   fi
 done
+if [ ! -f "$APP_DIR/.config/config.json" ] && [ -f "$OLD_APP_DIR/.config/config.json" ]; then
+  cp "$OLD_APP_DIR/.config/config.json" "$APP_DIR/.config/config.json"
+  echo "Migrated config from $OLD_APP_DIR"
+fi
+
 
 cat > "$APP_DIR/bin/bun" <<EOF
 #!/usr/bin/env sh

@@ -1,7 +1,7 @@
 {
-  "name": "umans-factory-provider",
+  "name": "umans-local-provider",
   "version": "0.1.0",
-  "description": "Local UMANS provider for Factory Droid and Oh My Pi with strict rate limiting and GLM vision handoff.",
+  "description": "Local UMANS provider for Factory Droid, Oh My Pi, OpenCode, and OpenAI-compatible clients with strict rate limiting and GLM vision handoff.",
   "main": "proxy.js",
   "scripts": {
     "start": "bun run proxy.js",

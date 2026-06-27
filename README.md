@@ -1,6 +1,6 @@
-# UMANS Factory Provider
+# UMANS Local Provider
 
-Local UMANS provider for **Factory Droid**, **Oh My Pi**, and OpenAI-compatible clients.
+Local UMANS provider for **Factory Droid**, **Oh My Pi**, **OpenCode**, and OpenAI-compatible clients.
 
 It runs UMANS through two local services:
 
@@ -26,19 +26,21 @@ Factory / OMP / clients
 ### 1. Clone and install
 
 ```bash
-git clone https://github.com/ThewindMom/umans-factory-provider.git
-cd umans-factory-provider
+git clone https://github.com/ThewindMom/umans-local-provider.git
+cd umans-local-provider
 ./scripts/install-local.sh
 ```
 
 The installer pins the `bun` executable currently on `PATH` into a local wrapper, so the user services work even when Bun is not installed at `~/.bun/bin`.
+
+Renamed from `umans-factory-provider`: the installer uses `~/.local/share/umans-local-provider` and migrates an existing config from the old install directory if present.
 
 ### 2. Configure UMANS API key
 
 Edit:
 
 ```bash
-~/.local/share/umans-factory-provider/.config/config.json
+~/.local/share/umans-local-provider/.config/config.json
 ```
 
 Set:

@@ -5,8 +5,8 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-WorkingDirectory=%h/.local/share/umans-factory-provider
-ExecStart=%h/.local/share/umans-factory-provider/bin/bun %h/.local/share/umans-factory-provider/src/umans-limiter.ts
+WorkingDirectory=%h/.local/share/umans-local-provider
+ExecStart=%h/.local/share/umans-local-provider/bin/bun %h/.local/share/umans-local-provider/src/umans-limiter.ts
 Restart=on-failure
 RestartSec=2
 Environment=UMANS_LIMITER_HOST=127.0.0.1

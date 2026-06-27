@@ -5,8 +5,8 @@ Wants=network-online.target umans-limiter.service
 
 [Service]
 Type=simple
-WorkingDirectory=%h/.local/share/umans-factory-provider
-ExecStart=%h/.local/share/umans-factory-provider/bin/bun %h/.local/share/umans-factory-provider/proxy.js
+WorkingDirectory=%h/.local/share/umans-local-provider
+ExecStart=%h/.local/share/umans-local-provider/bin/bun %h/.local/share/umans-local-provider/proxy.js
 Restart=on-failure
 RestartSec=2
 Environment=UMANS_DASH_AUTO_SETUP_OPENCODE=false
