@@ -955,6 +955,13 @@ function makeAppCookie(sessionToken) {
   return `__Secure-authjs.session-token=${sessionToken}`;
 }
 
+function extractAppSession(input) {
+  const raw = String(input || '').trim();
+  if (!raw) return '';
+  const match = raw.match(/__Secure-authjs\.session-token=([^;\s]+)/);
+  return match ? match[1].trim() : raw;
+}
+
 function getUsageDbPath() {
   return path.join(__dirname, '.cache', 'usage.db');
 }
@@ -3421,6 +3428,21 @@ async function handleRequest(req, res) {
       } else {
         writeJSON(res, 401, { error: 'Login failed' });
       }
+    } catch (e) { writeJSON(res, 400, { error: e.message }); }
+    return;
+  }
+
+  if (pathname === '/api/umans/session' && req.method === 'POST') {
+    try {
+      const body = await readBody(req);
+      const { appSession, session, cookie } = JSON.parse(body);
+      const token = extractAppSession(appSession || session || cookie);
+      if (!token) { writeJSON(res, 400, { error: 'Session token or cookie is required' }); return; }
+      config.appSession = token;
+      usageCache = { data: null, time: 0, ttl: usageCache.ttl };
+      usageHistoryCache = { data: null, time: 0, ttl: usageHistoryCache.ttl };
+      saveConfig(config);
+      writeJSON(res, 200, { success: true, loggedIn: true });
     } catch (e) { writeJSON(res, 400, { error: e.message }); }
     return;
   }

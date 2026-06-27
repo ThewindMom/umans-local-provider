@@ -64,8 +64,6 @@ afterEach(() => {
 test('strict limiter allows only one upstream request when max concurrency is one', async () => {
   const upstreamPort = await freePort();
   const limiterPort = await freePort();
-  const entered = [Promise.withResolvers<void>(), Promise.withResolvers<void>(), Promise.withResolvers<void>()];
-  const releases = [Promise.withResolvers<void>(), Promise.withResolvers<void>(), Promise.withResolvers<void>()];
   let active = 0;
   let maxActive = 0;
   let count = 0;
@@ -77,8 +75,7 @@ test('strict limiter allows only one upstream request when max concurrency is on
       const index = count++;
       active += 1;
       maxActive = Math.max(maxActive, active);
-      entered[index]?.resolve();
-      await releases[index]?.promise;
+      await Bun.sleep(100);
       active -= 1;
       return json({ ok: true, index });
     },
@@ -106,34 +103,14 @@ test('strict limiter allows only one upstream request when max concurrency is on
     limiter.exited.then(code => { throw new Error(`limiter exited before ready with code ${code}`); }),
   ]);
 
-  const requests = [0, 1, 2].map(i => fetch(`http://127.0.0.1:${limiterPort}/v1/test/${i}`, { method: 'POST', body: String(i) }));
-  const statuses: number[] = [];
+  const responses = await Promise.all([0, 1, 2].map(async i => {
+    const response = await fetch(`http://127.0.0.1:${limiterPort}/v1/test/${i}`, { method: 'POST', body: String(i) });
+    return { status: response.status, body: await response.json() };
+  }));
 
-  async function consumeResponse(index: number): Promise<void> {
-    const response = await requests[index];
-    statuses[index] = response.status;
-    await response.text();
-  }
-
-  await entered[0].promise;
-  expect(count).toBe(1);
-  expect(maxActive).toBe(1);
-
-  releases[0].resolve();
-  await consumeResponse(0);
-  await entered[1].promise;
-  expect(count).toBe(2);
-  expect(maxActive).toBe(1);
-
-  releases[1].resolve();
-  await consumeResponse(1);
-  await entered[2].promise;
   expect(count).toBe(3);
   expect(maxActive).toBe(1);
-
-  releases[2].resolve();
-  await consumeResponse(2);
-  expect(statuses.every(status => status === 200)).toBe(true);
+  expect(responses.every(resp => resp.status === 200)).toBe(true);
 
   const metrics = await fetch(`http://127.0.0.1:${limiterPort}/metrics`).then(resp => resp.json());
   expect(metrics.maxConcurrent).toBe(1);

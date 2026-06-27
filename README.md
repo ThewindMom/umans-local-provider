@@ -72,6 +72,15 @@ curl http://127.0.0.1:8084/healthz
 curl http://127.0.0.1:8084/v1/models/info
 ```
 
+## Dashboard UMANS usage login
+
+The dashboard usage cards use `app.umans.ai` account-session data, not the API key used for model calls. If your UMANS account uses Google/OAuth and has no password, open the dashboard at `http://127.0.0.1:8084`, click **Manage** in the API Key panel, then use **UMANS Login → Google/OAuth session cookie** and paste either:
+
+- the `__Secure-authjs.session-token` cookie value from an already logged-in `app.umans.ai` browser session, or
+- a Cookie header containing `__Secure-authjs.session-token=...`.
+
+The token is stored only in the local `.config/config.json` as `APP_SESSION`.
+
 ## Factory Droid setup
 
 Add the object from [`integrations/factory-custom-model.example.json`](integrations/factory-custom-model.example.json) to the `customModels` array in:

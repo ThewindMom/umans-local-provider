@@ -351,9 +351,14 @@
         <div class="modal-body">
           <div class="mb-3"><label class="form-label" style="font-size:12px" data-i18n="label_username">Email</label><input type="text" class="form-control form-control-sm" id="platLoginUsername" placeholder="email@example.com" data-i18n-placeholder="username_placeholder"></div>
           <div class="mb-3"><label class="form-label" style="font-size:12px" data-i18n="label_password">Password</label><input type="password" class="form-control form-control-sm" id="platLoginPassword" placeholder="password" data-i18n-placeholder="password_placeholder"></div>
+          <div class="mb-3" style="border-top:1px solid rgba(255,255,255,0.08);padding-top:12px">
+            <label class="form-label" style="font-size:12px">Google/OAuth session cookie</label>
+            <textarea class="form-control form-control-sm" id="platLoginSession" rows="3" placeholder="Paste __Secure-authjs.session-token value or Cookie header"></textarea>
+            <div class="form-text" style="font-size:11px;color:rgba(255,255,255,0.45)">Use this if your UMANS account signs in with Google and has no password. The token is stored only in the local dashboard config.</div>
+          </div>
           <div id="platLoginStatus" style="display:none" class="mb-2"></div>
         </div>
-        <div class="modal-footer border-top-0"><button class="btn btn-secondary btn-sm" data-bs-dismiss="modal" data-i18n="btn_cancel">Cancel</button><button class="btn btn-success btn-sm" onclick="savePlatformLogin()"><i class="bi bi-check-circle me-1"></i><span data-i18n="btn_save_and_login">Save & Login</span></button></div>
+        <div class="modal-footer border-top-0"><button class="btn btn-secondary btn-sm" data-bs-dismiss="modal" data-i18n="btn_cancel">Cancel</button><button class="btn btn-outline-light btn-sm" onclick="savePlatformSession()">Use Session Cookie</button><button class="btn btn-success btn-sm" onclick="savePlatformLogin()"><i class="bi bi-check-circle me-1"></i><span data-i18n="btn_save_and_login">Save & Login</span></button></div>
       </div>
     </div>
   </div>
@@ -1042,6 +1047,7 @@ container.innerHTML = `<div style="width:100%;font-size:11px;white-space:nowrap"
     function openPlatformLoginModal() {
       document.getElementById('platLoginUsername').value = '';
       document.getElementById('platLoginPassword').value = '';
+      document.getElementById('platLoginSession').value = '';
       document.getElementById('platLoginStatus').style.display = 'none';
       new bootstrap.Modal(document.getElementById('platformLoginModal')).show();
     }
@@ -1065,6 +1071,25 @@ container.innerHTML = `<div style="width:100%;font-size:11px;white-space:nowrap"
         }
       } catch(e) { statusEl.innerHTML = `<span class="text-danger">${escapeHtml(t('login_error','Error: {error}').replace('{error}', e.message))}</span>`; }
     }
+    async function savePlatformSession() {
+      const appSession = document.getElementById('platLoginSession').value.trim();
+      if (!appSession) { showToast('Session cookie required', 'warning'); return; }
+      const statusEl = document.getElementById('platLoginStatus');
+      statusEl.style.display = 'block';
+      statusEl.innerHTML = '<span class="text-info">Saving session...</span>';
+      try {
+        const r = await fetch('/api/umans/session', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({appSession}) });
+        const d = await r.json();
+        if (d.success) {
+          umansLoggedIn = true;
+          statusEl.innerHTML = '<span class="text-success">Session saved. Refreshing usage...</span>';
+          setTimeout(() => { bootstrap.Modal.getInstance(document.getElementById('platformLoginModal'))?.hide(); fetchUsage(); }, 800);
+          showToast(t('toast_login_success','Login successful'), 'success');
+        } else {
+          statusEl.innerHTML = `<span class="text-danger">${escapeHtml(t('login_failed','Login failed: {error}').replace('{error}', d.error||'Unknown error'))}</span>`;
+        }
+      } catch(e) { statusEl.innerHTML = `<span class="text-danger">${escapeHtml(t('login_error','Error: {error}').replace('{error}', e.message))}</span>`; }
+    }
     async function confirmLogout() {
       try {
         await fetch('/api/umans/logout', { method:'POST' });
@@ -1077,8 +1102,10 @@ container.innerHTML = `<div style="width:100%;font-size:11px;white-space:nowrap"
       } catch { showToast(t('toast_logout_failed','Logout failed'), 'danger'); }
     }
     document.addEventListener('keydown', function(e) {
-      if (e.key === 'Enter' && document.getElementById('platformLoginModal')?.classList.contains('show')) {
-        e.preventDefault(); savePlatformLogin();
+      if (e.key === 'Enter' && document.getElementById('platformLoginModal')?.classList.contains('show') && e.target?.id !== 'platLoginSession') {
+        e.preventDefault();
+        if (document.getElementById('platLoginSession').value.trim() && !document.getElementById('platLoginUsername').value.trim()) savePlatformSession();
+        else savePlatformLogin();
       }
     });
 
