@@ -156,14 +156,13 @@ This fixes the common failure mode where a text-only final model sees a placehol
 
 ## Strict rate limiting
 
-`src/umans-limiter.ts` gates every upstream HTTP request with one semaphore. The dashboard also gates new UMANS conversation fingerprints with a session lease so agent fan-out cannot create more account sessions than the local cap allows.
+`src/umans-limiter.ts` gates every upstream HTTP request with one semaphore. The dashboard also gates distinct UMANS conversation fingerprints with an in-flight session lease: a fingerprint holds a slot only while its request is in-flight and releases it the instant the request completes, so agent fan-out can never keep more distinct UMANS sessions open at once than the local cap allows.
 
 Defaults:
 
 ```text
 UMANS_LIMITER_MAX_CONCURRENCY=3
 UMANS_DASH_MAX_ACTIVE_SESSIONS=3
-UMANS_DASH_SESSION_TTL=30m
 UMANS_DASH_RATE_LIMIT_COOLDOWN=5m
 UMANS_LIMITER_UPSTREAM=https://api.code.umans.ai
 ```
@@ -239,8 +238,7 @@ Most important fields:
 | `VISION_HANDOFF_ENABLED` | `true` | Enable GLM image handoff |
 | `VISION_HANDOFF_MODEL` | `umans-kimi-k2.7` | Vision model used for image descriptions |
 | `OVERRIDE_CONCURRENCY` | `0` | Optional dashboard HTTP queue override; strict limiter and session leases remain authoritative |
-| `MAX_ACTIVE_SESSIONS` | `3` | Maximum leased UMANS conversation fingerprints before new sessions queue locally |
-| `SESSION_TTL` | `30m` | Idle time before a leased session fingerprint is released |
+| `MAX_ACTIVE_SESSIONS` | `3` | Maximum in-flight UMANS conversation fingerprints before new sessions queue locally (leases release on request completion) |
 | `RATE_LIMIT_COOLDOWN` | `5m` | Local circuit-breaker pause after upstream rate-limit responses without a reactivation timestamp |
 
 ## License

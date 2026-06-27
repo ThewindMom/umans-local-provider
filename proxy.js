@@ -308,81 +308,46 @@ function writeAnthropicPassthroughError(res, statusCode, body) {
 
 let activeRequests = 0;
 let requestQueue = [];
-let activeSessionLeases = new Map(); // fingerprint -> { firstSeen, lastSeen, expiresAt, sessNum }
-let sessionLeaseTimer = null;
+let activeSessionLeases = new Map(); // fingerprint -> { inFlight: number, sessNum: number|null }
 let rateLimitCircuit = { openUntil: 0, status: 0, message: '', openedAt: 0 };
 
 function sessionLeaseLimit() {
   return Math.max(1, config?.maxActiveSessions || 3);
 }
 
-function sessionLeaseTtlMs() {
-  return Math.max(1000, config?.sessionLeaseTtl || 30 * 60 * 1000);
-}
-
 function rateLimitCooldownMs() {
   return Math.max(1000, config?.rateLimitCooldown || 5 * 60 * 1000);
 }
 
-function pruneSessionLeases(now = Date.now()) {
-  let expired = 0;
-  for (const [fingerprint, lease] of activeSessionLeases) {
-    if (lease.expiresAt <= now) {
-      activeSessionLeases.delete(fingerprint);
-      expired++;
-    }
-  }
-  return expired;
-}
-
-function scheduleSessionLeasePrune() {
-  if (sessionLeaseTimer) {
-    clearTimeout(sessionLeaseTimer);
-    sessionLeaseTimer = null;
-  }
-  if (activeSessionLeases.size === 0) return;
-  const now = Date.now();
-  let nextExpiry = Infinity;
-  for (const lease of activeSessionLeases.values()) {
-    nextExpiry = Math.min(nextExpiry, lease.expiresAt);
-  }
-  if (!Number.isFinite(nextExpiry)) return;
-  sessionLeaseTimer = setTimeout(() => {
-    sessionLeaseTimer = null;
-    pruneSessionLeases();
-    processQueue();
-    scheduleSessionLeasePrune();
-  }, Math.max(1, nextExpiry - now));
-  sessionLeaseTimer.unref?.();
-}
-
 function canAcquireSessionLease(fingerprint) {
   if (!fingerprint) return true;
-  pruneSessionLeases();
   if (activeSessionLeases.has(fingerprint)) return true;
   return activeSessionLeases.size < sessionLeaseLimit();
 }
 
-function reserveSessionLease(fingerprint) {
+function acquireSessionLease(fingerprint, sessNum = null) {
   if (!fingerprint) return;
-  const now = Date.now();
-  pruneSessionLeases(now);
-  const ttl = sessionLeaseTtlMs();
   const existing = activeSessionLeases.get(fingerprint);
   if (existing) {
-    existing.lastSeen = now;
-    existing.expiresAt = now + ttl;
+    existing.inFlight++;
+    if (sessNum) existing.sessNum = sessNum;
   } else {
-    activeSessionLeases.set(fingerprint, { firstSeen: now, lastSeen: now, expiresAt: now + ttl, sessNum: null });
+    activeSessionLeases.set(fingerprint, { inFlight: 1, sessNum });
   }
-  scheduleSessionLeasePrune();
 }
 
-function refreshSessionLease(fingerprint, session) {
+function releaseSessionLease(fingerprint) {
   if (!fingerprint) return;
-  reserveSessionLease(fingerprint);
   const lease = activeSessionLeases.get(fingerprint);
-  if (lease && session?.sessNum) lease.sessNum = session.sessNum;
+  if (!lease) return;
+  lease.inFlight--;
+  if (lease.inFlight <= 0) activeSessionLeases.delete(fingerprint);
+}
+
+function tagSessionLease(fingerprint, sessNum) {
+  if (!fingerprint || !sessNum) return;
+  const lease = activeSessionLeases.get(fingerprint);
+  if (lease) lease.sessNum = sessNum;
 }
 
 function parseUpstreamErrorBody(body) {
@@ -466,7 +431,6 @@ function recordRateLimitCircuit(status, body) {
 }
 
 function gatewayMetrics() {
-  pruneSessionLeases();
   const leasedFingerprints = new Set(activeSessionLeases.keys());
   return {
     activeRequests,
@@ -474,7 +438,6 @@ function gatewayMetrics() {
     sessions: {
       active: activeSessionLeases.size,
       limit: sessionLeaseLimit(),
-      ttlMs: sessionLeaseTtlMs(),
       queuedNew: requestQueue.filter(item => item.fingerprint && !leasedFingerprints.has(item.fingerprint)).length,
     },
     circuit: getRateLimitCircuitState(),
@@ -490,16 +453,15 @@ function canStartGatewayItem(item) {
 
 function enqueueGatewayItem(item) {
   requestQueue.push(item);
-  scheduleSessionLeasePrune();
 }
 
 function startGatewayItem(item) {
-  reserveSessionLease(item.fingerprint);
+  acquireSessionLease(item.fingerprint);
   activeRequests++;
   const run = item.format === 'anthropic'
     ? proxyAnthropicRequest(item.res, item.payload, item.model, item.writeError, item.writePassthroughError, item.req, item.fingerprint)
     : proxyChatRequest(item.res, item.payload, item.model, item.writeError, item.writePassthroughError, item.req, item.fingerprint);
-  run.finally(() => { activeRequests--; processQueue(); });
+  run.finally(() => { activeRequests--; releaseSessionLease(item.fingerprint); processQueue(); });
 }
 
 let modelCatalogCache = null;
@@ -646,7 +608,6 @@ function loadConfig() {
     OVERRIDE_CONCURRENCY: 0,
     MAX_IMAGES: 9,
     MAX_ACTIVE_SESSIONS: 3,
-    SESSION_TTL: '30m',
     RATE_LIMIT_COOLDOWN: '5m',
   };
   if (fs.existsSync(configPath)) {
@@ -665,7 +626,6 @@ function loadConfig() {
   if (process.env.OVERRIDE_CONCURRENCY) rawConfig.OVERRIDE_CONCURRENCY = parseInt(process.env.OVERRIDE_CONCURRENCY);
   if (process.env.MAX_IMAGES) rawConfig.MAX_IMAGES = parseInt(process.env.MAX_IMAGES);
   if (process.env.UMANS_DASH_MAX_ACTIVE_SESSIONS) rawConfig.MAX_ACTIVE_SESSIONS = parseInt(process.env.UMANS_DASH_MAX_ACTIVE_SESSIONS);
-  if (process.env.UMANS_DASH_SESSION_TTL) rawConfig.SESSION_TTL = process.env.UMANS_DASH_SESSION_TTL;
   if (process.env.UMANS_DASH_RATE_LIMIT_COOLDOWN) rawConfig.RATE_LIMIT_COOLDOWN = process.env.UMANS_DASH_RATE_LIMIT_COOLDOWN;
   if (process.env.SLEEV_ENABLED !== undefined) rawConfig.SLEEV_ENABLED = process.env.SLEEV_ENABLED !== 'false';
 
@@ -701,7 +661,6 @@ function loadConfig() {
     overrideConcurrency: Math.max(0, rawConfig.OVERRIDE_CONCURRENCY || 0),
     maxImages: Math.max(1, rawConfig.MAX_IMAGES || 9),
     maxActiveSessions: Math.max(1, rawConfig.MAX_ACTIVE_SESSIONS || 3),
-    sessionLeaseTtl: parseDuration(rawConfig.SESSION_TTL || '30m') || 30 * 60 * 1000,
     rateLimitCooldown: parseDuration(rawConfig.RATE_LIMIT_COOLDOWN || '5m') || 5 * 60 * 1000,
     disabledModels: Array.isArray(rawConfig.DISABLED_MODELS) ? rawConfig.DISABLED_MODELS : [],
     locale: rawConfig.LOCALE || null,
@@ -767,7 +726,6 @@ function saveConfig(cfg) {
     OVERRIDE_CONCURRENCY: cfg.overrideConcurrency || 0,
     MAX_IMAGES: cfg.maxImages || 9,
     MAX_ACTIVE_SESSIONS: cfg.maxActiveSessions || 3,
-    SESSION_TTL: `${(cfg.sessionLeaseTtl || 30 * 60 * 1000) / (60 * 1000)}m`,
     RATE_LIMIT_COOLDOWN: `${(cfg.rateLimitCooldown || 5 * 60 * 1000) / (60 * 1000)}m`,
     DISABLED_MODELS: cfg.disabledModels || [],
     LOCALE: cfg.locale || null,
@@ -2932,17 +2890,13 @@ async function handleModels(req, res) {
 }
 
 function processQueue() {
-  if (requestQueue.length === 0) {
-    scheduleSessionLeasePrune();
-    return;
-  }
+  if (requestQueue.length === 0) return;
   const circuit = getRateLimitCircuitState();
   if (circuit.open) {
     rejectQueuedForCircuit(circuit);
     return;
   }
 
-  pruneSessionLeases();
   let started = false;
   do {
     started = false;
@@ -2960,7 +2914,6 @@ function processQueue() {
       break;
     }
   } while (started);
-  scheduleSessionLeasePrune();
 }
 
 async function handleChatCompletions(req, res) {
@@ -3015,7 +2968,7 @@ async function proxyAnthropicRequest(res, payload, requestedModel, writeError, w
   } else {
     session = { tokenIndex: slot.index, requestCount: 1, sessNum: ++globalSessionCounter };
   }
-  refreshSessionLease(fingerprint, session);
+  tagSessionLease(fingerprint, session.sessNum);
   const sessNum = session.sessNum;
 
   if (session.requestCount === 1) {
@@ -3134,7 +3087,7 @@ async function proxyChatRequest(res, payload, requestedModel, writeError, writeU
   } else {
     session = { tokenIndex: slot.index, requestCount: 1, sessNum: ++globalSessionCounter };
   }
-  refreshSessionLease(fingerprint, session);
+  tagSessionLease(fingerprint, session.sessNum);
   const sessNum = session.sessNum;
   const requestedStream = payload.stream === true;
 

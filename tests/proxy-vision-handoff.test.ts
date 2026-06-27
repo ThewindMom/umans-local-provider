@@ -38,6 +38,19 @@ function freePort(): Promise<number> {
 }
 
 
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function waitForStarts(arr: number[], target: number, timeoutMs: number): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (arr.length >= target) return true;
+    await sleep(20);
+  }
+  return arr.length >= target;
+}
+
 async function waitForOutput(stream: ReadableStream<Uint8Array> | null | undefined, needle: string): Promise<void> {
   if (!stream) throw new Error('missing proxy stdout stream');
   const reader = stream.getReader();
@@ -249,9 +262,11 @@ test('vision handoff uses the latest user question as context for older attached
   expect(handoffJson).not.toContain('Broadly describe the screenshot.');
 });
 
-test('new UMANS session fingerprints queue behind the local session lease cap', async () => {
+test('new UMANS session fingerprints queue behind the in-flight session lease cap and resume on completion', async () => {
   const port = await freePort();
   const starts: number[] = [];
+  const held: Array<() => void> = [];
+  const releaseAll = () => { for (const r of held.splice(0)) r(); };
 
   const server = Bun.serve({
     hostname: '127.0.0.1',
@@ -264,6 +279,7 @@ test('new UMANS session fingerprints queue behind the local session lease cap', 
       if (url.pathname === '/v1/messages') {
         await req.json();
         starts.push(Date.now());
+        await new Promise<void>(resolve => held.push(resolve));
         return json({ id: 'final-message', type: 'message', role: 'assistant', model: 'umans-glm-5.2', content: [{ type: 'text', text: 'ok' }], stop_reason: 'end_turn' });
       }
       return json({ error: `unexpected ${url.pathname}` }, { status: 404 });
@@ -273,26 +289,34 @@ test('new UMANS session fingerprints queue behind the local session lease cap', 
 
   const proxyPort = await startProxy(port, {
     UMANS_DASH_MAX_ACTIVE_SESSIONS: '2',
-    UMANS_DASH_SESSION_TTL: '1s',
   });
 
-  const responseStatuses = await Promise.all([0, 1, 2].map(async i => {
-    const resp = await fetch(`http://127.0.0.1:${proxyPort}/v1/messages`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        model: 'umans-glm-5.2',
-        max_tokens: 64,
-        messages: [{ role: 'user', content: [{ type: 'text', text: `distinct session ${i}` }] }],
-      }),
-    });
-    await resp.text();
-    return resp.status;
+  const requests = [0, 1, 2].map(i => fetch(`http://127.0.0.1:${proxyPort}/v1/messages`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      model: 'umans-glm-5.2',
+      max_tokens: 64,
+      messages: [{ role: 'user', content: [{ type: 'text', text: `distinct session ${i}` }] }],
+    }),
   }));
 
-  expect(responseStatuses).toEqual([200, 200, 200]);
-  expect(starts).toHaveLength(3);
-  expect(Math.max(...starts) - Math.min(...starts)).toBeGreaterThanOrEqual(900);
+  expect(await waitForStarts(starts, 2, 3000)).toBe(true);
+  expect(starts).toHaveLength(2);
+  await sleep(150);
+  const queuedHealth = await fetch(`http://127.0.0.1:${proxyPort}/healthz`).then(r => r.json());
+  const g = queuedHealth.gateway;
+  expect(g.activeRequests).toBe(2);
+  expect(g.queuedRequests).toBe(1);
+  expect(g.sessions.active).toBe(2);
+  expect(g.sessions.queuedNew).toBe(1);
+
+  releaseAll();
+  expect(await waitForStarts(starts, 3, 3000)).toBe(true);
+  releaseAll();
+
+  const statuses = await Promise.all(requests.map(r => r.then(resp => resp.status)));
+  expect(statuses).toEqual([200, 200, 200]);
 });
 
 test('upstream rate-limit response opens local circuit before later upstream calls', async () => {
