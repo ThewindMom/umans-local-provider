@@ -10,7 +10,6 @@ ExecStart=%h/.local/share/umans-local-provider/bin/bun %h/.local/share/umans-loc
 Restart=on-failure
 RestartSec=2
 Environment=UMANS_DASH_AUTO_SETUP_OPENCODE=false
-Environment=UMANS_DASH_MAX_ACTIVE_SESSIONS=3
 Environment=UMANS_DASH_RATE_LIMIT_COOLDOWN=5m
 
 [Install]

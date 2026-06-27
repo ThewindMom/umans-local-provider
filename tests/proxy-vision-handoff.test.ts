@@ -262,7 +262,7 @@ test('vision handoff uses the latest user question as context for older attached
   expect(handoffJson).not.toContain('Broadly describe the screenshot.');
 });
 
-test('new UMANS session fingerprints queue behind the in-flight session lease cap and resume on completion', async () => {
+test('dash queues requests above its concurrency cap and resumes on completion', async () => {
   const port = await freePort();
   const starts: number[] = [];
   const held: Array<() => void> = [];
@@ -288,7 +288,7 @@ test('new UMANS session fingerprints queue behind the in-flight session lease ca
   servers.push(server);
 
   const proxyPort = await startProxy(port, {
-    UMANS_DASH_MAX_ACTIVE_SESSIONS: '2',
+    OVERRIDE_CONCURRENCY: '2',
   });
 
   const requests = [0, 1, 2].map(i => fetch(`http://127.0.0.1:${proxyPort}/v1/messages`, {
@@ -297,7 +297,7 @@ test('new UMANS session fingerprints queue behind the in-flight session lease ca
     body: JSON.stringify({
       model: 'umans-glm-5.2',
       max_tokens: 64,
-      messages: [{ role: 'user', content: [{ type: 'text', text: `distinct session ${i}` }] }],
+      messages: [{ role: 'user', content: [{ type: 'text', text: `request ${i}` }] }],
     }),
   }));
 
@@ -308,8 +308,7 @@ test('new UMANS session fingerprints queue behind the in-flight session lease ca
   const g = queuedHealth.gateway;
   expect(g.activeRequests).toBe(2);
   expect(g.queuedRequests).toBe(1);
-  expect(g.sessions.active).toBe(2);
-  expect(g.sessions.queuedNew).toBe(1);
+  expect('sessions' in g).toBe(false);
 
   releaseAll();
   expect(await waitForStarts(starts, 3, 3000)).toBe(true);

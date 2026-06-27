@@ -156,13 +156,12 @@ This fixes the common failure mode where a text-only final model sees a placehol
 
 ## Strict rate limiting
 
-`src/umans-limiter.ts` gates every upstream HTTP request with one semaphore. The dashboard also gates distinct UMANS conversation fingerprints with an in-flight session lease: a fingerprint holds a slot only while its request is in-flight and releases it the instant the request completes, so agent fan-out can never keep more distinct UMANS sessions open at once than the local cap allows.
+`src/umans-limiter.ts` gates every upstream HTTP request with one semaphore capped at `3`, one below UMANS' advertised `4` concurrency ceiling. The dashboard forwards to the limiter and adds a local rate-limit circuit breaker that short-circuits new requests when UMANS returns `429` / `403 account_suspended`, so retry storms are absorbed locally instead of hammering upstream.
 
 Defaults:
 
 ```text
 UMANS_LIMITER_MAX_CONCURRENCY=3
-UMANS_DASH_MAX_ACTIVE_SESSIONS=3
 UMANS_DASH_RATE_LIMIT_COOLDOWN=5m
 UMANS_LIMITER_UPSTREAM=https://api.code.umans.ai
 ```
@@ -237,8 +236,7 @@ Most important fields:
 | `MAX_IMAGES` | `9` | Maximum images forwarded per request |
 | `VISION_HANDOFF_ENABLED` | `true` | Enable GLM image handoff |
 | `VISION_HANDOFF_MODEL` | `umans-kimi-k2.7` | Vision model used for image descriptions |
-| `OVERRIDE_CONCURRENCY` | `0` | Optional dashboard HTTP queue override; strict limiter and session leases remain authoritative |
-| `MAX_ACTIVE_SESSIONS` | `3` | Maximum in-flight UMANS conversation fingerprints before new sessions queue locally (leases release on request completion) |
+| `OVERRIDE_CONCURRENCY` | `0` | Optional dashboard in-flight cap override (clamped to the upstream concurrency limit); the strict limiter stays authoritative |
 | `RATE_LIMIT_COOLDOWN` | `5m` | Local circuit-breaker pause after upstream rate-limit responses without a reactivation timestamp |
 
 ## License

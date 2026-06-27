@@ -308,46 +308,10 @@ function writeAnthropicPassthroughError(res, statusCode, body) {
 
 let activeRequests = 0;
 let requestQueue = [];
-let activeSessionLeases = new Map(); // fingerprint -> { inFlight: number, sessNum: number|null }
 let rateLimitCircuit = { openUntil: 0, status: 0, message: '', openedAt: 0 };
-
-function sessionLeaseLimit() {
-  return Math.max(1, config?.maxActiveSessions || 3);
-}
 
 function rateLimitCooldownMs() {
   return Math.max(1000, config?.rateLimitCooldown || 5 * 60 * 1000);
-}
-
-function canAcquireSessionLease(fingerprint) {
-  if (!fingerprint) return true;
-  if (activeSessionLeases.has(fingerprint)) return true;
-  return activeSessionLeases.size < sessionLeaseLimit();
-}
-
-function acquireSessionLease(fingerprint, sessNum = null) {
-  if (!fingerprint) return;
-  const existing = activeSessionLeases.get(fingerprint);
-  if (existing) {
-    existing.inFlight++;
-    if (sessNum) existing.sessNum = sessNum;
-  } else {
-    activeSessionLeases.set(fingerprint, { inFlight: 1, sessNum });
-  }
-}
-
-function releaseSessionLease(fingerprint) {
-  if (!fingerprint) return;
-  const lease = activeSessionLeases.get(fingerprint);
-  if (!lease) return;
-  lease.inFlight--;
-  if (lease.inFlight <= 0) activeSessionLeases.delete(fingerprint);
-}
-
-function tagSessionLease(fingerprint, sessNum) {
-  if (!fingerprint || !sessNum) return;
-  const lease = activeSessionLeases.get(fingerprint);
-  if (lease) lease.sessNum = sessNum;
 }
 
 function parseUpstreamErrorBody(body) {
@@ -431,15 +395,9 @@ function recordRateLimitCircuit(status, body) {
 }
 
 function gatewayMetrics() {
-  const leasedFingerprints = new Set(activeSessionLeases.keys());
   return {
     activeRequests,
     queuedRequests: requestQueue.length,
-    sessions: {
-      active: activeSessionLeases.size,
-      limit: sessionLeaseLimit(),
-      queuedNew: requestQueue.filter(item => item.fingerprint && !leasedFingerprints.has(item.fingerprint)).length,
-    },
     circuit: getRateLimitCircuitState(),
   };
 }
@@ -448,7 +406,7 @@ function canStartGatewayItem(item) {
   if (getRateLimitCircuitState().open) return false;
   const limit = getEffectiveConcurrency().limit;
   if (limit !== null && activeRequests >= limit) return false;
-  return canAcquireSessionLease(item.fingerprint);
+  return true;
 }
 
 function enqueueGatewayItem(item) {
@@ -456,12 +414,11 @@ function enqueueGatewayItem(item) {
 }
 
 function startGatewayItem(item) {
-  acquireSessionLease(item.fingerprint);
   activeRequests++;
   const run = item.format === 'anthropic'
     ? proxyAnthropicRequest(item.res, item.payload, item.model, item.writeError, item.writePassthroughError, item.req, item.fingerprint)
-    : proxyChatRequest(item.res, item.payload, item.model, item.writeError, item.writePassthroughError, item.req, item.fingerprint);
-  run.finally(() => { activeRequests--; releaseSessionLease(item.fingerprint); processQueue(); });
+    : proxyChatRequest(item.res, item.payload, item.model, item.writeError, item.writePassthroughError, item.req, item.fingerprint)
+  run.finally(() => { activeRequests--; processQueue(); });
 }
 
 let modelCatalogCache = null;
@@ -607,7 +564,6 @@ function loadConfig() {
     CACHE_ENABLED: true,
     OVERRIDE_CONCURRENCY: 0,
     MAX_IMAGES: 9,
-    MAX_ACTIVE_SESSIONS: 3,
     RATE_LIMIT_COOLDOWN: '5m',
   };
   if (fs.existsSync(configPath)) {
@@ -625,7 +581,6 @@ function loadConfig() {
   if (process.env.CACHE_ENABLED) rawConfig.CACHE_ENABLED = process.env.CACHE_ENABLED !== 'false';
   if (process.env.OVERRIDE_CONCURRENCY) rawConfig.OVERRIDE_CONCURRENCY = parseInt(process.env.OVERRIDE_CONCURRENCY);
   if (process.env.MAX_IMAGES) rawConfig.MAX_IMAGES = parseInt(process.env.MAX_IMAGES);
-  if (process.env.UMANS_DASH_MAX_ACTIVE_SESSIONS) rawConfig.MAX_ACTIVE_SESSIONS = parseInt(process.env.UMANS_DASH_MAX_ACTIVE_SESSIONS);
   if (process.env.UMANS_DASH_RATE_LIMIT_COOLDOWN) rawConfig.RATE_LIMIT_COOLDOWN = process.env.UMANS_DASH_RATE_LIMIT_COOLDOWN;
   if (process.env.SLEEV_ENABLED !== undefined) rawConfig.SLEEV_ENABLED = process.env.SLEEV_ENABLED !== 'false';
 
@@ -660,7 +615,6 @@ function loadConfig() {
     freegenPrompt: rawConfig.FREEGEN_PROMPT || 'epic cinematic landscape, mountains at sunset, vibrant colors, ultra detailed, 16:9 wallpaper',
     overrideConcurrency: Math.max(0, rawConfig.OVERRIDE_CONCURRENCY || 0),
     maxImages: Math.max(1, rawConfig.MAX_IMAGES || 9),
-    maxActiveSessions: Math.max(1, rawConfig.MAX_ACTIVE_SESSIONS || 3),
     rateLimitCooldown: parseDuration(rawConfig.RATE_LIMIT_COOLDOWN || '5m') || 5 * 60 * 1000,
     disabledModels: Array.isArray(rawConfig.DISABLED_MODELS) ? rawConfig.DISABLED_MODELS : [],
     locale: rawConfig.LOCALE || null,
@@ -725,7 +679,6 @@ function saveConfig(cfg) {
     FREEGEN_PROMPT: cfg.freegenPrompt || 'epic cinematic landscape, mountains at sunset, vibrant colors, ultra detailed, 16:9 wallpaper',
     OVERRIDE_CONCURRENCY: cfg.overrideConcurrency || 0,
     MAX_IMAGES: cfg.maxImages || 9,
-    MAX_ACTIVE_SESSIONS: cfg.maxActiveSessions || 3,
     RATE_LIMIT_COOLDOWN: `${(cfg.rateLimitCooldown || 5 * 60 * 1000) / (60 * 1000)}m`,
     DISABLED_MODELS: cfg.disabledModels || [],
     LOCALE: cfg.locale || null,
@@ -2968,7 +2921,6 @@ async function proxyAnthropicRequest(res, payload, requestedModel, writeError, w
   } else {
     session = { tokenIndex: slot.index, requestCount: 1, sessNum: ++globalSessionCounter };
   }
-  tagSessionLease(fingerprint, session.sessNum);
   const sessNum = session.sessNum;
 
   if (session.requestCount === 1) {
@@ -3087,7 +3039,6 @@ async function proxyChatRequest(res, payload, requestedModel, writeError, writeU
   } else {
     session = { tokenIndex: slot.index, requestCount: 1, sessNum: ++globalSessionCounter };
   }
-  tagSessionLease(fingerprint, session.sessNum);
   const sessNum = session.sessNum;
   const requestedStream = payload.stream === true;
 
