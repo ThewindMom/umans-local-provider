@@ -107,24 +107,33 @@ test('strict limiter allows only one upstream request when max concurrency is on
   ]);
 
   const requests = [0, 1, 2].map(i => fetch(`http://127.0.0.1:${limiterPort}/v1/test/${i}`, { method: 'POST', body: String(i) }));
+  const statuses: number[] = [];
+
+  async function consumeResponse(index: number): Promise<void> {
+    const response = await requests[index];
+    statuses[index] = response.status;
+    await response.text();
+  }
 
   await entered[0].promise;
   expect(count).toBe(1);
   expect(maxActive).toBe(1);
 
   releases[0].resolve();
+  await consumeResponse(0);
   await entered[1].promise;
   expect(count).toBe(2);
   expect(maxActive).toBe(1);
 
   releases[1].resolve();
+  await consumeResponse(1);
   await entered[2].promise;
   expect(count).toBe(3);
   expect(maxActive).toBe(1);
 
   releases[2].resolve();
-  const responses = await Promise.all(requests);
-  expect(responses.every(resp => resp.status === 200)).toBe(true);
+  await consumeResponse(2);
+  expect(statuses.every(status => status === 200)).toBe(true);
 
   const metrics = await fetch(`http://127.0.0.1:${limiterPort}/metrics`).then(resp => resp.json());
   expect(metrics.maxConcurrent).toBe(1);
