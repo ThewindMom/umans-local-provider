@@ -115,7 +115,7 @@ After changing `~/.factory/settings.json`, start a **new** Droid session. Existi
 
 ## Oh My Pi setup
 
-Merge [`integrations/omp-models.example.yml`](integrations/omp-models.example.yml) into your OMP agent config:
+Model/provider overrides belong in `~/.omp/agent/models.yml`. Merge [`integrations/omp-models.example.yml`](integrations/omp-models.example.yml):
 
 ```yaml
 providers:
@@ -126,7 +126,11 @@ providers:
         input:
           - text
           - image
+```
 
+Image handoff settings belong in `~/.omp/agent/config.yml`. Merge [`integrations/omp-config.example.yml`](integrations/omp-config.example.yml):
+
+```yaml
 images:
   describeForTextModels: true
 ```

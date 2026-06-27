@@ -6,6 +6,3 @@ providers:
         input:
           - text
           - image
-
-images:
-  describeForTextModels: true
