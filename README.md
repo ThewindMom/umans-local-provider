@@ -26,7 +26,7 @@ Factory / OMP / clients
 ### 1. Clone and install
 
 ```bash
-git clone https://github.com/YOUR_USER/umans-factory-provider.git
+git clone https://github.com/ThewindMom/umans-factory-provider.git
 cd umans-factory-provider
 ./scripts/install-local.sh
 ```
